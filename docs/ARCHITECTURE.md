@@ -1,147 +1,172 @@
-# 🏗️ DeskGuard — System Architecture
+# DeskGuard — System Architecture
 
 ## Overview
 
-DeskGuard follows a **client-server architecture** with a React frontend, a Node.js/Express REST API backend, PostgreSQL for persistent storage, and Redis for managing server-side desk timers.
+DeskGuard follows a client-server architecture with a React frontend, a FastAPI backend, PostgreSQL for persistent storage, and an APScheduler background job for server-side timer management. The frontend polls the backend every 10 seconds via React Query to reflect real-time desk status changes.
 
 ---
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React)                      │
-│                                                              │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │  Landing    │  │  Library Map │  │ Librarian Dashboard│  │
-│  │  Page       │  │  (SVG Grid)  │  │ (Admin Panel)     │  │
-│  └─────────────┘  └──────────────┘  └───────────────────┘  │
-│                          │                                   │
-│                   React Router DOM                           │
-└──────────────────────────┼──────────────────────────────────┘
-                           │ HTTP / REST API
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    BACKEND (Node.js / Express)               │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  /auth       │  │  /desks      │  │  /librarian      │  │
-│  │  JWT Auth    │  │  CRUD + QR   │  │  Admin Routes    │  │
-│  └──────────────┘  └──────────────┘  └──────────────────┘  │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Background Sweep Job (cron)             │    │
-│  │  Runs every 60 seconds                               │    │
-│  │  → Checks all desks with active/away timers          │    │
-│  │  → Auto-expires desks past their time limit          │    │
-│  │  → Updates desk status to "free" in DB               │    │
-│  └─────────────────────────────────────────────────────┘    │
-└────────────────────┬────────────────────┬───────────────────┘
-                     │                    │
-          ┌──────────▼──────┐   ┌─────────▼────────┐
-          │   PostgreSQL     │   │      Redis        │
-          │                  │   │                   │
-          │  - users         │   │  - desk:{id}:     │
-          │  - desks         │   │    checkin_time   │
-          │  - bookings      │   │  - desk:{id}:     │
-          │  - audit_logs    │   │    away_time      │
-          └──────────────────┘   └───────────────────┘
++-------------------------------------------------------------+
+|                     FRONTEND (React + Vite)                 |
+|                                                             |
+|  +---------------+  +----------------+  +---------------+  |
+|  |  Landing Page |  | Library Map    |  | Librarian     |  |
+|  |               |  | (SVG Grid)     |  | Dashboard     |  |
+|  +---------------+  +----------------+  +---------------+  |
+|                                                             |
+|  State: Zustand       Data fetching: React Query (10s poll) |
++---------------------------+---------------------------------+
+                            | HTTP / REST (Axios)
+                            v
++-------------------------------------------------------------+
+|                  BACKEND (FastAPI + Python)                  |
+|                                                             |
+|  +---------------+  +----------------+  +---------------+  |
+|  | /auth         |  | /desks         |  | /librarian    |  |
+|  | JWT Auth      |  | Check-in, Away |  | Admin Routes  |  |
+|  | python-jose   |  | Release, Status|  | Manual Reset  |  |
+|  +---------------+  +----------------+  +---------------+  |
+|                                                             |
+|  +-------------------------------------------------------+  |
+|  |           APScheduler Background Job (60s)            |  |
+|  |  - Queries all occupied and away desks                |  |
+|  |  - Compares current time against check-in timestamps  |  |
+|  |  - Auto-expires desks that have exceeded time limits  |  |
+|  |  - Updates status to "abandoned" in PostgreSQL        |  |
+|  +-------------------------------------------------------+  |
++---------------------------+---------------------------------+
+                            |
+              +-------------+-------------+
+              |                           |
+    +---------v----------+    +-----------v--------+
+    |    PostgreSQL 15   |    |   Supabase (hosted)|
+    |                    |    |                    |
+    |  - users           |    |  Free tier         |
+    |  - desks           |    |  Managed DB        |
+    |  - bookings        |    |  Connection pooling|
+    |  - audit_logs      |    |                    |
+    +--------------------+    +--------------------+
 ```
 
 ---
 
 ## Component Breakdown
 
-### Frontend
+### Frontend Components
 
 | Component | Responsibility |
 |---|---|
 | `LibraryMap.jsx` | Renders the SVG grid of all desks with live color states |
-| `DeskGrid.jsx` | Maps desk data array to individual DeskCell SVG elements |
-| `DeskCell.jsx` | Single desk — color coded, clickable, shows status tooltip |
-| `CheckIn.jsx` | Handles QR scan → check-in confirmation → API call |
-| `LibrarianDash.jsx` | Table of all desks with manual reset buttons |
-| `Navbar.jsx` | Top navigation with role-based links |
+| `DeskGrid.jsx` | Maps the desk data array to individual DeskCell SVG elements |
+| `DeskCell.jsx` | Single desk unit — color-coded, clickable, displays status tooltip |
+| `CheckIn.jsx` | Handles QR scan, check-in confirmation, and API call |
+| `LibrarianDash.jsx` | Table of all desks with status, timestamps, and manual reset buttons |
+| `Navbar.jsx` | Top navigation with role-based links (student vs librarian) |
 
-### Backend
+### Backend Modules
 
 | Module | Responsibility |
 |---|---|
-| `routes/desks.js` | GET all desks, POST check-in, PATCH away/return, DELETE release |
-| `routes/auth.js` | Student & librarian login, JWT token issue |
-| `routes/librarian.js` | Admin-only: manual reset, view logs |
-| `jobs/sweeper.js` | Cron job — runs every 60s, expires timed-out desks |
-| `models/Desk.js` | Desk schema: id, status, studentId, checkinTime, awayTime |
+| `routers/auth.py` | Student and librarian login, JWT token issuance |
+| `routers/desks.py` | GET all desks, POST check-in, PATCH away/return, DELETE release |
+| `routers/librarian.py` | Admin-only routes: manual desk reset, audit log view |
+| `jobs/sweeper.py` | APScheduler job — runs every 60s, expires timed-out desks |
+| `models/desk.py` | SQLAlchemy desk model: id, status, student_id, checkin_at, away_at |
+| `models/user.py` | SQLAlchemy user model: id, name, email, role, hashed_password |
+| `alembic/` | Database migration scripts managed via Alembic |
 
 ---
 
 ## Desk Status State Machine
 
 ```
-         ┌─────────┐
-         │  FREE   │ ◄─────────────────────────────┐
-         └────┬────┘                                │
-              │ Student scans QR                    │
-              ▼                                     │
-         ┌──────────┐   2hr no response        ┌────┴──────┐
-         │ OCCUPIED │ ─────────────────────► │ ABANDONED │
-         └────┬─────┘                          └───────────┘
-              │ Student clicks "Away"               ▲
-              ▼                                     │
-         ┌─────────┐   20 min timeout               │
-         │  AWAY   │ ───────────────────────────────┘
-         └────┬────┘
-              │ Student clicks "I'm Back"
-              └──────────────► OCCUPIED
+         +---------+
+         |  FREE   | <------------------------------------+
+         +---------+                                      |
+              |                                           |
+              | Student scans QR and checks in            |
+              v                                           |
+         +----------+   2hr inactivity / no response  +------------+
+         | OCCUPIED | --------------------------------> | ABANDONED  |
+         +----------+                                  +------------+
+              |                                             ^
+              | Student clicks "Away"                       |
+              v                                             |
+         +---------+   20 min timeout                       |
+         |  AWAY   | --------------------------------------+
+         +---------+
+              |
+              | Student clicks "I'm Back"
+              v
+         OCCUPIED
 ```
 
 ---
 
-## Timer Logic (Server-Side Only)
+## Timer Logic
 
-All timers run **server-side** — never in the browser.
+All timers are managed server-side. The browser never controls desk expiry.
 
-- On check-in: `Redis.set("desk:{id}:checkin", timestamp, EX 7200)` (2 hours)
-- On Away: `Redis.set("desk:{id}:away", timestamp, EX 1200)` (20 minutes)
-- Sweeper job queries all active desks and compares current time vs stored timestamps
-- Expired desks are updated to `status: 'abandoned'` in PostgreSQL and key deleted from Redis
+- On check-in: the desk record is updated with `checkin_at = now()` in PostgreSQL
+- On Away: the desk record is updated with `away_at = now()` and status set to `away`
+- The APScheduler job runs every 60 seconds and queries all desks where:
+  - `status = 'occupied'` and `now() - checkin_at > 2 hours` (triggers Still Here prompt, then abandons)
+  - `status = 'away'` and `now() - away_at > 20 minutes` (auto-abandons)
+- Expired desks are updated to `status = 'abandoned'` and the student association is cleared
 
 ---
 
 ## Database Schema
 
-### `desks` table
+### desks table
+
 ```sql
 CREATE TABLE desks (
-  id          SERIAL PRIMARY KEY,
-  label       VARCHAR(10) NOT NULL,   -- e.g. "A1", "B3"
-  status      VARCHAR(20) DEFAULT 'free',  -- free | occupied | away | abandoned
-  student_id  INTEGER REFERENCES users(id),
-  checkin_at  TIMESTAMP,
-  away_at     TIMESTAMP,
-  floor       INTEGER DEFAULT 1,
-  section     VARCHAR(5)
+    id          SERIAL PRIMARY KEY,
+    label       VARCHAR(10) NOT NULL,
+    status      VARCHAR(20) DEFAULT 'free',
+    student_id  INTEGER REFERENCES users(id),
+    checkin_at  TIMESTAMP,
+    away_at     TIMESTAMP,
+    floor       INTEGER DEFAULT 1,
+    section     VARCHAR(5)
 );
 ```
 
-### `users` table
+### users table
+
 ```sql
 CREATE TABLE users (
-  id        SERIAL PRIMARY KEY,
-  name      VARCHAR(100),
-  email     VARCHAR(100) UNIQUE,
-  role      VARCHAR(20) DEFAULT 'student',  -- student | librarian
-  password  VARCHAR(255)
+    id              SERIAL PRIMARY KEY,
+    name            VARCHAR(100),
+    email           VARCHAR(100) UNIQUE NOT NULL,
+    role            VARCHAR(20) DEFAULT 'student',
+    hashed_password VARCHAR(255) NOT NULL
+);
+```
+
+### audit_logs table
+
+```sql
+CREATE TABLE audit_logs (
+    id          SERIAL PRIMARY KEY,
+    desk_id     INTEGER REFERENCES desks(id),
+    student_id  INTEGER REFERENCES users(id),
+    action      VARCHAR(50),
+    created_at  TIMESTAMP DEFAULT now()
 );
 ```
 
 ---
 
-## Deployment
+## Deployment Architecture
 
-| Service | Platform | URL |
+| Service | Platform | Notes |
 |---|---|---|
-| Frontend | Vercel | `https://deskguard.vercel.app` |
-| Backend API | Render | `https://deskguard-api.onrender.com` |
-| Database | Render PostgreSQL | Managed |
-| Redis | Render Redis | Managed |
+| Frontend | Vercel | Git-connected, auto-deploys on push to main |
+| Backend API | Railway | Always-on Python server, free tier |
+| Database | Supabase (PostgreSQL 15) | Managed, free tier |
+| API Documentation | FastAPI Swagger UI | Available at /docs on the backend URL |
