@@ -193,10 +193,10 @@ uvicorn main:app --reload
 
 ## Team
 
-| Name | Role |
+| Name | Department / Course |
 |---|---|
-| Sakshi | Full-Stack Developer |
-| Viru | Documentation and Repository |
+| Virendra Premdas Shende | MCA Science |
+| Sakshi Vikas Wadekar | MSC Blockchain Technology |
 
 ---
 
