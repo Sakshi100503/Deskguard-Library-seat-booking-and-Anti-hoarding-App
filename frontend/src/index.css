@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #F8F9FA;
+    color: #1A1D23;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { width: 100%; min-height: 100vh; display: flex; flex-direction: column; }
+}
+
+@layer components {
+  /* Desk cell status variants */
+  .desk-free      { background: #EBFBEE; border-color: #8CE99A; color: #2B8A3E; }
+  .desk-occupied  { background: #FFE3E3; border-color: #FFA8A8; color: #C92A2A; }
+  .desk-away      { background: #FFF9DB; border-color: #FFD43B; color: #E67700; }
+  .desk-abandoned { background: #F1F3F5; border-color: #DEE2E6; color: #868E96; }
+
+  /* Status pills */
+  .pill-free      { background: #EBFBEE; color: #2B8A3E; }
+  .pill-occupied  { background: #FFE3E3; color: #C92A2A; }
+  .pill-away      { background: #FFF9DB; color: #E67700; }
+  .pill-abandoned { background: #F1F3F5; color: #868E96; }
+
+  /* Mini map preview tiles (landing page) */
+  .mp-free      { background: #B2F2BB; }
+  .mp-occupied  { background: #FFA8A8; }
+  .mp-away      { background: #FFD43B; }
+  .mp-abandoned { background: #DEE2E6; }
+}
