@@ -169,12 +169,6 @@ uvicorn main:app --reload
 
 ---
 
-## Live Demo
-
-| Service | URL |
-|---|---|
-| Frontend | https://deskguard.vercel.app *(to be updated)* |
-| Backend API | https://deskguard-api.up.railway.app *(to be updated)* |
 
 ---
 
